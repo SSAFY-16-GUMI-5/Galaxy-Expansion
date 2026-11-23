@@ -87,7 +87,17 @@ Suggested duration: 3–5 days. See [Project plan](docs/IMPLEMENTATION_PLAN.md) 
 npm test
 ```
 
-Tests only use Node's built-in test runner; no external dependencies are required.
+Run `npm install` first. The test suite starts a local Relay and launches real Bridge subprocesses.
+
+To include the Python Runner smoke test, set both variables below in PowerShell and run the suite from the Platform repository. Use a Starter checkout that contains the Runner and its demo fixture.
+
+```powershell
+$env:GALAXY_TEST_STARTER_DIR = 'C:\path\to\Galaxy-Expansion-Starter'
+$env:GALAXY_TEST_PYTHON = 'python'
+npm.cmd test
+```
+
+The smoke test runs `python -m framework.adapters.python --module tests.fixtures.python_runner_demo` under the Bridge with the Starter checkout as its working directory. For a browser check with a local Relay already running, launch that same command through the absolute path to `bridge/local-bridge.mjs` from Starter. Set `GALAXY_TEST_PRESENTATION_DELAY` to `1` to make the demo's transitions visible.
 
 ## 5. GitHub organization deployment
 
@@ -107,7 +117,7 @@ server/static.mjs         Built-in local static server (zero dependencies)
 server/relay.mjs          WebSocket server (requires npm install)
 bridge/local-bridge.mjs   Runs any local language program over JSONL
 examples/python/          Minimal protocol event demonstration
-tests/                    Domain unit tests
+tests/                    Domain unit tests and live Bridge/Relay tests
 docs/                     Architecture, implementation plan, protocol
 .github/workflows/        CI and Pages publishing
 ```

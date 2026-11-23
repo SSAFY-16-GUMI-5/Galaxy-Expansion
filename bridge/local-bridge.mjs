@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /** Language-agnostic bridge: child stdout JSONL -> authenticated WSS relay. */
 import { spawn } from 'node:child_process';
+import { constants } from 'node:os';
 import { createInterface } from 'node:readline';
 const divider = process.argv.indexOf('--');
 const cmd = divider>=0?process.argv.slice(divider+1):[];
@@ -11,8 +12,18 @@ const token=process.env.GALAXY_TOKEN || (url.startsWith('ws://127.0.0.1:')?'loca
 if(!token){console.error('Set GALAXY_TOKEN for non-local servers');process.exit(2);}
 const ws=new WebSocket(url);
 let child,ready=false,closed=false;
-function shutdown(){if(closed)return;closed=true;if(child&&!child.killed)child.kill();if(ws.readyState===WebSocket.OPEN)ws.close();}
-const timeout=setTimeout(()=>{if(!ready){console.error('[bridge] connection timeout');shutdown();}},10000);
+function shutdown(){
+  if(closed)return;
+  closed=true;
+  clearTimeout(timeout);
+  if(child?.pid && child.exitCode===null && child.signalCode===null && !child.killed)child.kill();
+  if(ws.readyState===WebSocket.CONNECTING || ws.readyState===WebSocket.OPEN)ws.close();
+}
+const timeout=setTimeout(()=>{
+  console.error('[bridge] connection timeout');
+  process.exitCode=1;
+  shutdown();
+},10000);
 ws.addEventListener('open',()=>ws.send(JSON.stringify({type:'hello',role:'producer',participantId,token})));
 ws.addEventListener('message',(event)=>{
   let msg;try{msg=JSON.parse(event.data)}catch{return;}
@@ -20,8 +31,22 @@ ws.addEventListener('message',(event)=>{
     ready=true;clearTimeout(timeout);
     console.error(`[bridge] connected: ${participantId}`);
     child=spawn(cmd[0],cmd.slice(1),{stdio:['pipe','pipe','inherit'],shell:false});
-    child.on('error',e=>{console.error('[bridge] launch error:',e.message);shutdown();});
-    child.on('exit',(code)=>{console.error('[bridge] program exited:',code);shutdown();});
+    child.on('error',e=>{
+      console.error('[bridge] launch error:',e.message);
+      if(!closed){process.exitCode=1;shutdown();}
+    });
+    // Wait for stdout to drain before closing the socket, including for producers
+    // that write a final event and exit without reading its acknowledgment.
+    child.on('close',(code,signal)=>{
+      console.error('[bridge] program exited:',code ?? signal);
+      if(closed)return;
+      process.exitCode=code ?? (constants.signals[signal] ? 128+constants.signals[signal] : 1);
+      shutdown();
+    });
+    // The child may close its stdin before the last acknowledgment arrives.
+    child.stdin.on('error',e=>{
+      if(e.code!=='EPIPE' && e.code!=='ERR_STREAM_DESTROYED')console.error('[bridge] child stdin error:',e.message);
+    });
     child.stdin.write(JSON.stringify({type:'init',participantId})+'\n');
     const lines=createInterface({input:child.stdout,crlfDelay:Infinity});
     lines.on('line',line=>{
@@ -37,7 +62,10 @@ ws.addEventListener('message',(event)=>{
   if(child&&child.stdin.writable&&['ack','error'].includes(msg.type))child.stdin.write(JSON.stringify(msg)+'\n');
   if(msg.type==='error')console.error('[relay]',msg.message);
 });
-ws.addEventListener('close',()=>{clearTimeout(timeout);console.error('[bridge] relay disconnected');shutdown();});
+ws.addEventListener('close',()=>{
+  console.error('[bridge] relay disconnected');
+  if(!closed){process.exitCode=1;shutdown();}
+});
 ws.addEventListener('error',()=>console.error('[bridge] websocket connection error'));
 process.on('SIGINT',()=>{shutdown();process.exit(130)});
 process.on('SIGTERM',()=>{shutdown();process.exit(143)});
