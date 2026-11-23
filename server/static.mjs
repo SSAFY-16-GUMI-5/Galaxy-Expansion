@@ -4,7 +4,7 @@ import {resolve, extname, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=resolve(fileURLToPath(new URL('../public/',import.meta.url)));
 const port=Number(process.env.PORT||4173);
-const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'};
+const types={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon'};
 http.createServer(async(req,res)=>{
   const path=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
   const file=resolve(root,`.${path==='/'?'/index.html':path}`);
