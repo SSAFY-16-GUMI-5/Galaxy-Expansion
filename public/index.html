@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#090b16" />
+  <title>GALAXY EXPANSION — Object Pooling Lab</title>
+  <meta name="description" content="Language-agnostic object pooling study. Turn code into stars and build a shared galaxy." />
+  <link rel="stylesheet" href="./style.css" />
+  <script type="importmap">
+  {"imports":{
+    "three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+    "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+  }}
+  </script>
+</head>
+<body>
+  <div class="shell">
+    <aside class="rail" aria-label="Navigation">
+      <a class="mark" href="#home" aria-label="Galaxy home">G<span>✦</span></a>
+      <div class="rail-nav"><span class="nav-current" title="Universe">✧</span><span title="Labs">▦</span><span title="Events">◷</span></div>
+      <div class="rail-bottom"><span class="online-dot"></span><span class="rail-help" title="Help">?</span></div>
+    </aside>
+    <div class="workspace">
+      <header class="topbar">
+        <div class="breadcrumb"><span>STUDY LABS</span><span class="slash">/</span><strong>GALAXY EXPANSION</strong><span class="tag">V0.1 ALPHA</span></div>
+        <div class="top-right"><span class="tag ghost">OBJECT POOLING</span><span class="avatar">S16</span></div>
+      </header>
+      <main id="home" class="main">
+        <div class="intro">
+          <div><p class="eyebrow"><span class="tiny-glow"></span> THE UNIVERSE IS YOUR CANVAS</p><h1>Build a universe.<br/><em>One object at a time.</em></h1><p class="description">코드로 별을 탄생시키고, 재사용하고, 서로의 우주를 연결하십시오.<br/>모든 별은 한 번의 객체 생명주기에서 시작됩니다.</p></div>
+          <div class="live-summary"><span id="connection-indicator" class="connection-dot"></span><div><strong id="connection-status">DEMO MODE</strong><small id="connection-detail">로컬 시뮬레이션 실행 중</small></div></div>
+        </div>
+        <section class="experience" aria-label="3D Galaxy Universe">
+          <div class="scene-holder" id="scene-holder">
+            <div id="scene-canvas" class="scene-canvas"></div>
+            <div id="scene-fallback" class="scene-fallback" hidden>WebGL 씬을 불러올 수 없습니다. 브라우저의 WebGL 지원과 인터넷 연결을 확인하십시오.</div>
+            <div class="scene-top"><span class="scene-pill"><span class="pill-sparkle">✦</span> UNIVERSE / 001</span><span class="scene-pill stage-pill" id="scene-stage-pill">STAGE 01 · COSMIC SEED</span></div>
+            <div class="scene-center-label" id="scene-status-label">INITIALIZING UNIVERSE</div>
+            <div class="scene-coordinates"><span>✣</span> DRAG TO ORBIT · SCROLL TO ZOOM</div>
+            <div class="scene-bottom"><div class="mini-legend"><span class="legend-point cyan"></span> ACTIVE OBJECTS <span class="legend-point violet"></span> REUSED OBJECTS</div><div class="camera-state">3D ENGINE <span id="render-state">STARTING</span></div></div>
+          </div>
+          <aside class="scene-panel">
+            <div class="panel-heading"><span>UNIVERSE STATUS</span><span class="panel-dots">•••</span></div>
+            <div class="stat-major"><span>ACTIVE STARS</span><strong id="active-count">0</strong><div class="stat-accent">IN CURRENT UNIVERSE</div></div>
+            <div class="two-stats"><div><small>TOTAL ALLOCATED SLOTS</small><strong id="allocated-count">0</strong></div><div><small>REUSED OBJECTS</small><strong id="reused-count">0</strong></div></div>
+            <div class="stage-progress"><div class="stage-heading"><span>EXPANSION LEVEL</span><strong id="current-stage">01 / 04</strong></div><div class="track"><div id="progress-value" class="track-value" style="width:0%"></div></div><p id="next-stage">다음 단계까지 별 10개</p></div>
+            <div class="stage-list">
+              <div class="stage-item current" data-stage="1"><span>01</span><strong>Cosmic Seed</strong><small>0 – 9</small></div>
+              <div class="stage-item" data-stage="2"><span>02</span><strong>Star Cluster</strong><small>10 – 29</small></div>
+              <div class="stage-item" data-stage="3"><span>03</span><strong>Proto Galaxy</strong><small>30 – 99</small></div>
+              <div class="stage-item" data-stage="4"><span>04</span><strong>Galaxy</strong><small>100+</small></div>
+            </div>
+            <div class="panel-footer"><span class="tiny-glow"></span> <span id="participant-count">0</span> PARTICIPANT(S) · COMMUNITY GALAXY</div>
+          </aside>
+        </section>
+        <div class="lower-grid">
+          <section class="section-panel controls-panel">
+            <div class="section-head"><div><p class="eyebrow">INTERACTIVE SANDBOX</p><h2>Cosmic Object Lab</h2></div><span class="panel-badge" id="mode-badge">DEMO</span></div>
+            <p class="hint">별을 생성하고 반환하여 Object Pool의 동작을 확인하십시오. Live 모드에서는 참가자 프로그램의 이벤트만 표시됩니다.</p>
+            <div class="form-grid"><label>STAR NAME<input id="star-name" maxlength="40" value="Aurora Seed" spellcheck="false" /></label><label>COLOR<select id="star-color"><option value="#5dcaff">Electric Blue</option><option value="#a78bfa">Nebula Purple</option><option value="#f8cf86">Solar Gold</option><option value="#59e5c8">Mint Nova</option><option value="#fb789e">Supernova Pink</option></select></label></div>
+            <label class="range-label">STAR SIZE <span id="size-label">1.2</span><input id="star-size" type="range" min="0.3" max="3.5" value="1.2" step="0.1" /></label>
+            <div class="action-row"><button id="create-star" class="button primary">✦ CREATE STAR</button><button id="create-ten" class="button secondary">+10 STARS</button><button id="release-star" class="button secondary">↩ RELEASE LAST</button><button id="reset-demo" class="button subtle">RESET</button></div>
+            <div class="connection-tools"><div class="connection-help"><strong>Connect live session</strong><small>별도 Relay Server의 WebSocket 주소를 입력하십시오.</small></div><div class="connection-fields"><input id="ws-url" aria-label="WebSocket URL" placeholder="ws://127.0.0.1:8787/ws" /><button id="connect-live" class="button connect">CONNECT</button><button id="demo-mode" class="button subtle" hidden>DEMO</button></div></div>
+          </section>
+          <section class="section-panel activity-panel"><div class="section-head"><div><p class="eyebrow">REAL-TIME STREAM</p><h2>Cosmic Activity</h2></div><span class="activity-live"><span class="online-dot"></span> EVENTS</span></div><div id="activity-log" class="activity-log" role="log" aria-live="polite"></div><div class="activity-foot">OBJECT EVENTS · LIVE / DEMO</div></section>
+        </div>
+        <footer><div><span class="brand-star">✦</span> GALAXY EXPANSION <span class="footer-sep">/</span> SSAFY-16-GUMI-5</div><span>BUILT FOR THE CURIOUS · V0.1</span></footer>
+      </main>
+    </div>
+  </div>
+  <script type="module" src="./js/main.js"></script>
+</body>
+</html>
