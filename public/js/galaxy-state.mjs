@@ -32,6 +32,32 @@ export function validateEvent(e) {
 }
 export class GalaxyState {
   constructor() { this.slots = new Map(); this.sequence = 0; this.totalAcquired = 0; this.reuseCount = 0; }
+  toSavedState() {
+    return {
+      version: 1, sequence: this.sequence, totalAcquired: this.totalAcquired, reuseCount: this.reuseCount,
+      slots: [...this.slots.values()].map(slot => ({...slot})),
+    };
+  }
+  static fromSavedState(saved) {
+    if (saved?.version !== 1 || !Array.isArray(saved.slots)
+      || ![saved.sequence, saved.totalAcquired, saved.reuseCount].every(n => Number.isSafeInteger(n) && n >= 0)
+      || saved.reuseCount > saved.totalAcquired || saved.totalAcquired > saved.sequence) {
+      throw new Error('Invalid saved galaxy state');
+    }
+    const state = new GalaxyState();
+    for (const slot of saved.slots) {
+      if (!slot || typeof slot.active !== 'boolean' || typeof slot.reused !== 'boolean'
+        || slot.key !== `${slot.participantId}:${slot.poolSlotId}` || state.slots.has(slot.key)
+        || validateEvent({ ...slot, type: 'acquire', data: slot })) {
+        throw new Error('Invalid saved galaxy slot');
+      }
+      state.slots.set(slot.key, {...slot});
+    }
+    state.sequence = saved.sequence;
+    state.totalAcquired = saved.totalAcquired;
+    state.reuseCount = saved.reuseCount;
+    return state;
+  }
   get activeCount() { return [...this.slots.values()].filter(x => x.active).length; }
   get availableCount() { return this.slots.size - this.activeCount; }
   get participants() { return new Set([...this.slots.values()].map(x => x.participantId)).size; }

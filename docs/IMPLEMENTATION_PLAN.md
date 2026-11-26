@@ -46,21 +46,23 @@ The server never executes submitted code. The viewer cannot control participants
 - Demo controls and activity feed
 - Explicit demo/live modes
 
-### M2 — Realtime bridge (source implemented; integration verification pending)
+### M2 — Realtime bridge (integration verified)
 - Separate Node WebSocket relay
 - Authenticated producer and read-only viewer roles
 - Per-participant object namespace
 - JSON Lines subprocess bridge for arbitrary languages
 - Handle reconnects and bad messages, limit message size and event rate
+- Verified producer ACKs and Edge WebGL updates through both localhost and a temporary HTTPS/WSS endpoint
 
-### M3 — Organization repo and public preview (pending)
-- Create organization repository, add source and enable Pages
-- Verify Three.js CDN and deployed browser WebGL support
-- Deploy external HTTPS/WSS relay and configure producer credentials
-- Verify remote participant → relay → deployed site
+### M3 — External participant pilot (next milestone)
+- Share the viewer URL and starter ZIP with two participants. Share the producer token privately.
+- Have each participant run their own code on a separate PC with a unique participant ID, using slot `1` for both.
+- Confirm matching relay acknowledgments and viewer activity for acquire, release, and generation 2 acquire. Open a second viewer and confirm its snapshot matches the current counts.
+- Record each participant's proof of reference reuse alongside the browser result.
+- Choose a persistent HTTPS/WSS host and enable Pages if the team needs a separate static viewer.
 
-### M4 — Study-ready starter (next phase)
-- Provide skeletal implementations for popular languages without solution code
+### M4 — Study-ready starters
+- JavaScript and C++ (`starter/cpp/`) starters and ZIP verified; add language scaffolds based on participant demand
 - Common offline runner for behavioral verification
 - Setup documentation and pull-request checklist
 - Require tests that prove reference/instance reuse, not just reported events
@@ -79,7 +81,7 @@ The server never executes submitted code. The viewer cannot control participants
 
 ## Follow-up architecture decisions
 
-- Persistence: whether stars survive producer disconnect and server restart; v0.1 retains state on disconnect but **not** restart.
+- Persistence: live state survives producer disconnect. With `DATABASE_URL` configured, PostgreSQL also preserves state across relay restarts.
 - Identity: token per participant instead of the shared dev token.
 - LOD: instantiate optimized meshes per star group, use point-cloud galaxies at long distance.
 - Sound and visual transitions: optional and outside study scope.

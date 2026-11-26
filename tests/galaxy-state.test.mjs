@@ -16,6 +16,18 @@ test('acquire-release-reuse maintains slot identity with generation increment',(
   assert.equal(s.snapshot().reuseCount,1);
   assert.equal(s.snapshot().pooledCount,1);
 });
+test('saved state restores active stars and the generation of released slots', () => {
+  const original = new GalaxyState();
+  original.applyEvent(acquire('visible', 'bob'));
+  original.applyEvent(acquire('reusable'));
+  original.applyEvent({ type: 'release', participantId: 'alice', poolSlotId: 'reusable', generation: 1 });
+
+  const restored = GalaxyState.fromSavedState(JSON.parse(JSON.stringify(original.toSavedState())));
+  assert.deepEqual(restored.snapshot(), original.snapshot());
+  assert.equal(restored.applyEvent(acquire('reusable')).ok, false);
+  assert.equal(restored.applyEvent(acquire('reusable', 'alice', 2)).event.revision, 4);
+  assert.equal(restored.reuseCount, 1);
+});
 test('active slot and stale release are rejected',()=>{
   const s=new GalaxyState(); s.applyEvent(acquire('a'));
   assert.equal(s.applyEvent(acquire('a')).ok,false);

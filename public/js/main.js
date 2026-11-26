@@ -15,6 +15,7 @@ let sceneView = null;
 let live = false;
 let socket = null;
 let lastStageId = 1;
+let currentSnapshot;
 const demo = new GalaxyState();
 const demoGenerations = new Map();
 let nextDemoSlot = 1;
@@ -35,6 +36,7 @@ function logEvent(title,description,kind='create'){
   while(dom.log.children.length>12)dom.log.lastElementChild.remove();
 }
 function updateUI(snapshot){
+  currentSnapshot=snapshot;
   const count=snapshot.activeCount;const stage=stageForCount(count);
   dom.active.textContent=count.toLocaleString('en-US');
   dom.allocated.textContent=snapshot.pooledCount.toLocaleString('en-US');
@@ -99,7 +101,7 @@ function exitLive(){
   logEvent('Demo mode resumed','Local sandbox active','stage');
 }
 function connectLive(){
-  const endpoint=dom.wsUrl.value.trim()||'ws://127.0.0.1:8787/ws';
+  const endpoint=dom.wsUrl.value.trim()||defaultEndpoint;
   if(!/^wss?:\/\//.test(endpoint)){logEvent('Connection error','ws:// 또는 wss:// 주소를 입력하십시오','release');return;}
   if(location.protocol==='https:'&&endpoint.startsWith('ws://')){logEvent('Secure connection required','HTTPS 페이지에서는 wss:// 연결을 사용하십시오','release');return;}
   if(socket)socket.close();
@@ -147,7 +149,9 @@ dom.reset.addEventListener('click',()=>{
 dom.size.addEventListener('input',()=>{dom.sizeLabel.textContent=Number(dom.size.value).toFixed(1);});
 dom.connect.addEventListener('click',connectLive);
 dom.demo.addEventListener('click',exitLive);
-dom.wsUrl.value=location.hostname==='localhost'||location.hostname==='127.0.0.1'?'ws://127.0.0.1:8787/ws':'';
+const localPreview=location.protocol==='http:' && location.port==='4173';
+const defaultEndpoint=localPreview?'ws://127.0.0.1:8787/ws':`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`;
+dom.wsUrl.value=defaultEndpoint;
 
 // Three.js is a browser-only module imported lazily, so the non-rendering UI remains useful if CDN access fails.
 async function createRenderer(){
@@ -168,8 +172,14 @@ async function createRenderer(){
   dom.mount.appendChild(renderer.domElement);
   const controls=new OrbitControls(camera,renderer.domElement);
   controls.enableDamping=true;controls.dampingFactor=.06;controls.minDistance=3;controls.maxDistance=190;
-  controls.autoRotate=true;controls.autoRotateSpeed=.23;controls.enablePan=false;
-  renderer.domElement.addEventListener('pointerdown',()=>{controls.autoRotate=false;});
+  // The galaxy itself turns (see `galaxy` below), so the camera orbit stays off to avoid stacking rotations.
+  controls.autoRotate=false;controls.enablePan=false;
+  // OrbitControls emits start/end for drag, touch, wheel and pinch; pause the spin around any of them.
+  const SPIN_SPEED=2*Math.PI/120,SPIN_RESUME_DELAY=1.5;
+  const reducedMotion=window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  let interacting=false,resumeAt=0,spin=reducedMotion?.matches?0:1,userZoomed=false;
+  controls.addEventListener('start',()=>{interacting=true;});
+  controls.addEventListener('end',()=>{interacting=false;resumeAt=performance.now()/1000+SPIN_RESUME_DELAY;});
   const composer=new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene,camera));
   composer.addPass(new UnrealBloomPass(new THREE.Vector2(100,100),1.0,.55,.14));
@@ -178,7 +188,9 @@ async function createRenderer(){
   const geometry=new THREE.SphereGeometry(1,16,12);
   const mesh=new THREE.InstancedMesh(geometry,new THREE.MeshBasicMaterial({color:0xffffff,toneMapped:false}),MAX);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  mesh.count=0;mesh.frustumCulled=false;scene.add(mesh);
+  mesh.count=0;mesh.frustumCulled=false;
+  // Stars and halos share one group so they rotate together about the world origin; the backdrop stays fixed.
+  const galaxy=new THREE.Group();galaxy.add(mesh);scene.add(galaxy);
   // Single Points draw call for many luminous halos.
   const glowGeo=new THREE.BufferGeometry();
   const glPos=new Float32Array(MAX*3),glColor=new Float32Array(MAX*3),glSize=new Float32Array(MAX);
@@ -190,7 +202,7 @@ async function createRenderer(){
     vertexColors:false,uniforms:{uPixelRatio:{value:Math.min(devicePixelRatio||1,1.6)}},
     vertexShader:`attribute vec3 color; attribute float aSize; varying vec3 vColor; uniform float uPixelRatio; void main(){vColor=color; vec4 v=modelViewMatrix*vec4(position,1.0); gl_Position=projectionMatrix*v; gl_PointSize=clamp(aSize*320.0*uPixelRatio/max(1.0,-v.z),4.0,95.0);}`,
     fragmentShader:`varying vec3 vColor; void main(){vec2 p=gl_PointCoord*2.0-1.0; float d=length(p); float a=pow(max(0.0,1.0-d),3.8)*0.75; if(d>1.0)discard; gl_FragColor=vec4(vColor*a,a);}`});
-  const glows=new THREE.Points(glowGeo,glowMaterial);glows.frustumCulled=false;scene.add(glows);
+  const glows=new THREE.Points(glowGeo,glowMaterial);glows.frustumCulled=false;galaxy.add(glows);
   // Backdrop: deterministic deep-space dust with subtle layers.
   const bgCount=1500,bgPos=new Float32Array(bgCount*3),bgCol=new Float32Array(bgCount*3);
   for(let i=0;i<bgCount;i++){
@@ -201,7 +213,7 @@ async function createRenderer(){
   const starsGeo=new THREE.BufferGeometry();starsGeo.setAttribute('position',new THREE.BufferAttribute(bgPos,3));starsGeo.setAttribute('color',new THREE.BufferAttribute(bgCol,3));
   scene.add(new THREE.Points(starsGeo,new THREE.PointsMaterial({size:.34,transparent:true,opacity:.75,vertexColors:true,sizeAttenuation:true,depthWrite:false})));
   const actors=new Map();const tmp=new THREE.Object3D();const tint=new THREE.Color();
-  let stageId=1,desiredDistance=19,lastTime=performance.now();
+  let stageId=1,desiredDistance=19,lastTime=performance.now(),lastDistance=camera.position.length();
   function hash(input){let h=2166136261;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619);}return (h>>>0)/4294967295;}
   function pointFor(star,index,total,stage){
     const seed=hash(star.key+':'+star.generation),a=index*2.3999632+seed*2*Math.PI;
@@ -216,7 +228,9 @@ async function createRenderer(){
   }
   function setSnapshot(snapshot){
     const stars=snapshot.stars??[];stageId=snapshot.stage?.id||stageForCount(stars.length).id;
-    desiredDistance=([19,32,59,109][stageId-1]||19);
+    const stageDistance=([19,32,59,109][stageId-1]||19);
+    // A new stage reframes the camera even after a manual zoom; otherwise the user's zoom is kept.
+    if(stageDistance!==desiredDistance){desiredDistance=stageDistance;userZoomed=false;}
     const activeKeys=new Set(stars.map(s=>s.key));
     for(const key of actors.keys())if(!activeKeys.has(key))actors.delete(key);
     for(let i=0;i<Math.min(MAX,stars.length);i++){
@@ -234,9 +248,17 @@ async function createRenderer(){
   const observer=new ResizeObserver(resize);observer.observe(dom.mount);resize();
   function animate(time){
     const dt=Math.min(.05,(time-lastTime)/1000||.016);lastTime=time;
-    const distance=camera.position.length();
-    if(controls.autoRotate){const newDistance=THREE.MathUtils.damp(distance,desiredDistance,1.3,dt);camera.position.setLength(newDistance);}
+    // Distance changes we did not make are user zooms (wheel applies in its event handler, pinch in update);
+    // after one, stop framing so the chosen zoom is kept until the next stage change.
+    let framedDistance=camera.position.length();
+    if(Math.abs(framedDistance-lastDistance)>1e-3)userZoomed=true;
+    if(!userZoomed&&!interacting){framedDistance=THREE.MathUtils.damp(framedDistance,desiredDistance,1.3,dt);camera.position.setLength(framedDistance);}
     controls.update();
+    lastDistance=camera.position.length();
+    if(Math.abs(lastDistance-framedDistance)>1e-3)userZoomed=true;
+    const spinTarget=interacting||time/1000<resumeAt||reducedMotion?.matches?0:1;
+    spin=THREE.MathUtils.damp(spin,spinTarget,spinTarget?1.2:8,dt);
+    galaxy.rotation.y+=SPIN_SPEED*spin*dt;
     let i=0;
     for(const actor of actors.values()){
       if(i>=MAX)break;
@@ -258,7 +280,7 @@ async function createRenderer(){
 }
 seedDemo();
 createRenderer().then(view=>{
-  sceneView=view;view.setSnapshot(demo.snapshot());dom.sceneLabel.classList.add('hidden');dom.renderState.textContent='WEBGL 3D';
+  sceneView=view;view.setSnapshot(currentSnapshot);dom.sceneLabel.classList.add('hidden');dom.renderState.textContent='WEBGL 3D';
 }).catch(e=>{
   console.error('[galaxy] 3D initialization failed:',e);
   dom.sceneLabel.classList.add('hidden');dom.fallback.hidden=false;dom.renderState.textContent='UNAVAILABLE';

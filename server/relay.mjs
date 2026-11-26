@@ -2,24 +2,40 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { createServer } from 'node:http';
 import { timingSafeEqual } from 'node:crypto';
 import { GalaxyState, MAX_ACTIVE } from '../public/js/galaxy-state.mjs';
+import { servePublic } from './static.mjs';
+import { openPostgresState } from './postgres-state.mjs';
 
 const HOST = process.env.GALAXY_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.GALAXY_PORT ?? 8787);
+const PORT = Number(process.env.GALAXY_PORT ?? process.env.PORT ?? 8787);
 const TOKEN = process.env.GALAXY_PRODUCER_TOKEN ?? (HOST === '127.0.0.1' ? 'local-demo-token' : '');
 if (!TOKEN) throw new Error('GALAXY_PRODUCER_TOKEN is required when the server is not bound to localhost.');
 if (!process.env.GALAXY_PRODUCER_TOKEN) console.warn('Local development token in use; do not expose this server to the internet.');
 
-const state = new GalaxyState();
+const databaseUrl = process.env.DATABASE_URL;
+const postgres = databaseUrl ? await openPostgresState(databaseUrl).catch(error => {
+  console.error('[database] Could not load galaxy state. Check DATABASE_URL and apply server/galaxy-state.sql.', error.code ?? error.name);
+  process.exit(1);
+}) : null;
+let state = postgres?.initialState ?? new GalaxyState();
+let pendingWrite = Promise.resolve();
 const producers = new Map();
 const server = createServer((req,res)=>{
   if(req.url==='/health'){
     res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});
     res.end(JSON.stringify({ok:true,active:state.activeCount,stage:state.snapshot().stage.id,viewers:wss.clients.size,limit:MAX_ACTIVE}));
-  } else {res.writeHead(404);res.end('Not found');}
+  } else {servePublic(req,res);}
 });
 const wss = new WebSocketServer({server,maxPayload:8192, path:'/ws',perMessageDeflate:false});
 const send=(ws,msg)=>{if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify(msg));};
 const publish=(msg)=>{for(const client of wss.clients){if(client.role==='viewer')send(client,msg);}};
+function replyToEvent(ws, message, result) {
+  if (!result.ok) {
+    send(ws, { type: 'error', message: result.error });
+    return;
+  }
+  send(ws, { type: 'ack', revision: result.event.revision, action: message.type });
+  publish({ type: 'event', event: result.event, stats: state.snapshot() });
+}
 const authorized=(input)=>{
   if(typeof input!=='string') return false;
   const actual=Buffer.from(input),expected=Buffer.from(TOKEN);
@@ -58,10 +74,19 @@ wss.on('connection',(ws)=>{
     if(ws.role==='viewer'){send(ws,{type:'error',message:'Viewer is read-only'});return;}
     if(!['acquire','release','reset'].includes(msg.type)){send(ws,{type:'error',message:'Unsupported command'});return;}
     // Never trust client-supplied ownership: bind each event to its authenticated connection.
-    const result=state.applyEvent({...msg,participantId:ws.participantId});
-    if(!result.ok){send(ws,{type:'error',message:result.error});return;}
-    send(ws,{type:'ack',revision:result.event.revision,action:msg.type});
-    publish({type:'event',event:result.event,stats:state.snapshot()});
+    const event = {...msg, participantId: ws.participantId};
+    if (!postgres) {
+      replyToEvent(ws, event, state.applyEvent(event));
+      return;
+    }
+    pendingWrite = pendingWrite.then(async () => {
+      const persisted = await postgres.applyEvent(event);
+      state = persisted.state;
+      replyToEvent(ws, event, persisted.result);
+    }).catch(error => {
+      console.error('[database] Could not persist galaxy event:', error.code ?? error.name);
+      send(ws, { type: 'error', message: 'Galaxy event could not be saved' });
+    });
   });
   ws.on('close',()=>{
     if(ws.role==='producer'&&producers.get(ws.participantId)===ws){
